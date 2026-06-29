@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cantina Escolar — Sistema QR</title>
+  <meta name="theme-color" content="#1D9E75">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cantina">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Carregando dados...</div>
+  <div class="loading-subtext">Conectando ao banco de dados</div>
+</div>
+
+<!-- ==================== LOGIN ==================== -->
+<div id="tela-login">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icone">🍽️</div>
+      <div class="login-titulo">Cantina Escolar</div>
+      <div class="login-sub">Sistema de controle de refeições</div>
+    </div>
+    <div id="login-erro" class="login-erro">Usuário ou senha incorretos.</div>
+    <div class="form-grupo">
+      <label for="login-usuario">Usuário</label>
+      <input type="text" id="login-usuario" placeholder="Digite seu usuário" autocomplete="username">
+    </div>
+    <div class="form-grupo">
+      <label for="login-senha">Senha</label>
+      <input type="password" id="login-senha" placeholder="Digite sua senha" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') fazerLogin()">
+    </div>
+    <button class="btn btn-verde btn-flex btn-login-submit" onclick="fazerLogin()">
+      Entrar
+    </button>
+    <p class="login-rodape">
+      Acesso restrito a responsáveis autorizados
+    </p>
+  </div>
+</div>
+
+<!-- APP (oculto até login) -->
+<div id="app" class="app-oculto">
+<nav>
+  <div class="nav-logo"><div class="nav-logo-dot">🍽️</div>Cantina <span>Escolar</span></div>
+  <button class="nav-hamburguer" id="nav-hamburguer" onclick="toggleMenu()" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <div class="nav-links" id="nav-links">
+    <button class="tab ativo" data-tela="dashboard" onclick="ir(this)">📊 Painel do Dia</button>
+    <button class="tab" data-tela="leitor" onclick="ir(this)">Leitor QR</button>
+    <button class="tab" data-tela="agendamentos" onclick="ir(this)">Agendamentos</button>
+    <button class="tab" data-tela="presencas" onclick="ir(this)">✏️ Ajuste de Presenças</button>
+    <button class="tab" data-tela="entrada" onclick="ir(this)">📍 Entrada</button>
+    <button class="tab" data-tela="relatorios" onclick="ir(this)">Relatórios</button>
+    <button class="tab" data-tela="rel-presenca" onclick="ir(this)">📋 Diário de Presenças</button>
+    <button class="tab" data-tela="alunos" onclick="ir(this)">Alunos</button>
+    <div id="sync-status" class="sync-status">🟡 Verificando...</div>
+      <div class="nav-sair-wrap">
+      <button class="nav-sair" onclick="sair()">⬅ Sair</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ==================== DASHBOARD ==================== -->
+<div id="tela-dashboard" class="tela ativa">
+  <div class="topo-flex">
+    <div>
+      <h1>Painel do Dia</h1>
+      <p class="sub" id="dash-data"></p>
+    </div>
+    <div class="topo-acoes">
+      <label for="dash-filtro" class="visually-hidden">Data</label>
+      <input type="date" id="dash-filtro" aria-label="Data do painel" onchange="renderDash()">
+    </div>
+  </div>
+
+  <div class="grid4 mb16">
+    <div class="stat"><div class="stat-val" id="d-agend">0</div><div class="stat-label">Total possível</div></div>
+    <div class="stat"><div class="stat-val verde" id="d-serv">0</div><div class="stat-label">Servidos</div></div>
+    <div class="stat"><div class="stat-val cinza" id="d-pend">0</div><div class="stat-label">Pendentes</div></div>
+    <div class="stat"><div class="stat-val vermelho" id="d-block">0</div><div class="stat-label">Bloqueados</div></div>
+  </div>
+
+  <div id="d-alertas-refeicao"></div>
+
+  <div class="card mb16">
+    <div class="prog-topo">
+      <span class="prog-titulo">📊 Progresso Geral do Dia</span>
+      <span id="d-pct" class="prog-pct">0%</span>
+    </div>
+    <div class="prog"><div class="prog-fill" id="d-barra"></div></div>
+    <p id="d-prog-txt" class="prog-sub"></p>
+      <div id="d-barras-ref" class="d-barras-ref"></div>
+      <table style="width:100%;margin-top:16px;">
+        <tbody id="d-turmas">
+          <tr><td colspan="4" class="vazio">Nenhuma leitura hoje.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <p class="card-titulo">Últimas leituras</p>
+      <div id="d-registros"><p class="vazio">Nenhuma leitura ainda.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== LEITOR QR ==================== -->
+<div id="tela-leitor" class="tela">
+  <h1>Leitor QR</h1>
+  <p class="sub">Selecione a refeição e aponte a câmera para o QR Code do aluno</p>
+
+  <div class="grid2">
+    <div>
+      <div class="card">
+
+        <!-- SELETOR DE REFEIÇÃO — principal novidade -->
+        <div class="form-grupo">
+          <label for="leit-refeicao">🍽️ Refeição sendo servida agora *</label>
+          <select id="leit-refeicao">
+            <option value="">— Selecione a refeição —</option>
+            <option value="Lanche manhã">☀️ Lanche manhã</option>
+            <option value="Almoço">🍛 Almoço</option>
+            <option value="Lanche tarde">🌤️ Lanche tarde</option>
+          </select>
+        </div>
+
+        <div class="form-grupo">
+          <label for="leit-data">📅 Data</label>
+          <input type="date" id="leit-data">
+        </div>
+
+        <div class="form-grupo">
+          <label for="leit-resp">👤 Responsável</label>
+          <input type="text" id="leit-resp" value="Responsável Cantina">
+        </div>
+
+        <div id="qr-reader"></div>
+        <div class="cam-botoes">
+          <button class="btn btn-verde" id="btn-iniciar" onclick="iniciarCamera()">Ligar câmera</button>
+          <button class="btn btn-out"   id="btn-parar"   onclick="pararCamera()" disabled>Parar câmera</button>
+        </div>
+        <p class="cam-dica">O QR é lido automaticamente ao ser detectado</p>
+      </div>
+
+      <div class="card">
+        <p class="card-titulo">Sessão atual</p>
+        <div class="grid3">
+          <div class="sessao-item"><div class="sessao-val verde" id="sess-lib">0</div><div class="sessao-label">Liberados</div></div>
+          <div class="sessao-item"><div class="sessao-val vermelho" id="sess-blk">0</div><div class="sessao-label">Bloqueados</div></div>
+          <div class="sessao-item"><div class="sessao-val cinza" id="sess-tot">0</div><div class="sessao-label">Total</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="resultado res-idle" id="leit-resultado">
+        <div class="res-icon">📷</div>
+        <div class="res-nome">Câmera desligada</div>
+        <div class="res-sub">Selecione a refeição e clique em "Ligar câmera"</div>
+      </div>
+
+      <div class="card">
+        <p class="card-titulo">Histórico da sessão</p>
+        <div id="leit-hist"><p class="vazio">Sem leituras ainda.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== AGENDAMENTOS ==================== -->
+<div id="tela-agendamentos" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>Agendamentos</h1>
+      <p class="sub">Controle de presença por dia e refeição — sem QR Code, apenas para planejamento</p>
+    </div>
+    <div class="topo-acoes">
+      <div class="form-grupo compact">
+        <label for="ag-filtro">📅 Data</label>
+        <input type="date" id="ag-filtro" onchange="renderAgend()">
+      </div>
+      <div class="form-grupo compact">
+        <label for="ag-ref-filtro">🍽️ Refeição</label>
+        <select id="ag-ref-filtro" onchange="renderAgend()">
+          <option value="">Todas refeições</option>
+          <option value="Lanche manhã">Lanche manhã</option>
+          <option value="Almoço">Almoço</option>
+          <option value="Lanche tarde">Lanche tarde</option>
+        </select>
+      </div>
+      <button class="btn btn-out" onclick="gerarLote()">Gerar lote</button>
+      <button class="btn btn-verde" onclick="abrirModalAgend()">+ Adicionar aluno</button>
+    </div>
+  </div>
+
+  <div id="ag-alerta" class="alerta"></div>
+
+  <!-- Resumo por refeição -->
+  <div class="grid3 mb16" id="ag-resumo"></div>
+
+  <div class="card">
+    <div class="card-topo">
+      <p class="card-titulo mb0">Lista do dia</p>
+      <span id="ag-contador" class="contador"></span>
+    </div>
+    <div id="ag-filtros-sala" class="al-filtros-sala"></div>
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Aluno</th><th>Turma</th><th>Refeição</th><th>Status</th><th>Ação</th></tr></thead>
+        <tbody id="ag-corpo"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PRESENÇAS ==================== -->
+<div id="tela-presencas" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>Presenças</h1>
+      <p class="sub">Marque quem faltou no dia — os ausentes não entram no agendamento de refeições</p>
+    </div>
+    <div class="topo-acoes">
+      <div class="form-grupo compact">
+        <label for="pres-filtro">📅 Data</label>
+        <input type="date" id="pres-filtro" onchange="renderPresencas()">
+      </div>
+      <div class="form-grupo compact">
+        <label for="pres-ref-filtro">🍽️ Refeição</label>
+        <select id="pres-ref-filtro" onchange="renderPresencas()">
+          <option value="Almoço">Almoço</option>
+          <option value="Lanche manhã">Lanche manhã</option>
+          <option value="Lanche tarde">Lanche tarde</option>
+        </select>
+      </div>
+      <button class="btn btn-out mt20" onclick="marcarTodosPresentes()">✅ Todos presentes</button>
+    </div>
+  </div>
+
+  <div class="grid3 mb16">
+    <div class="stat"><div class="stat-val verde" id="pres-presentes">0</div><div class="stat-label">Presentes</div></div>
+    <div class="stat"><div class="stat-val vermelho" id="pres-faltaram">0</div><div class="stat-label">Faltaram</div></div>
+    <div class="stat"><div class="stat-val amarelo" id="pres-nao-comeram">0</div><div class="stat-label">Presentes que não comeram</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-topo">
+      <p class="card-titulo mb0">Lista de alunos</p>
+      <input type="text" id="pres-busca" placeholder="Buscar..." class="busca" oninput="renderPresencas()">
+    </div>
+    <div id="pres-filtros-sala" class="al-filtros-sala"></div>
+    <div class="scroll-x">
+      <table>
+        <thead>
+          <tr>
+            <th>Aluno</th>
+            <th>Turma</th>
+            <th>Turno</th>
+            <th>Situação</th>
+            <th>Refeição</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody id="pres-corpo"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ENTRADA ==================== -->
+
+
+<!-- ==================== RELATÓRIOS ==================== -->
+<div id="tela-relatorios" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>Relatórios</h1>
+      <p class="sub">Visualize faltas e refeições por período</p>
+    </div>
+    <div class="topo-acoes">
+      <div class="form-grupo compact-sm">
+        <label for="rel-inicio">📅 Data início</label>
+        <input type="date" id="rel-inicio" onchange="renderRelatorio()">
+      </div>
+      <div class="form-grupo compact-sm">
+        <label for="rel-fim">📅 Data fim</label>
+        <input type="date" id="rel-fim" onchange="renderRelatorio()">
+      </div>
+      <div class="form-grupo compact">
+        <label for="rel-tipo">📋 Tipo</label>
+        <select id="rel-tipo" onchange="renderRelatorio()">
+          <option value="faltas">Faltas por aluno</option>
+          <option value="refeicoes">Refeições servidas</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid3 mb16">
+    <div class="stat"><div class="stat-val" id="rel-total-dias">0</div><div class="stat-label">Dias no período</div></div>
+    <div class="stat"><div class="stat-val vermelho" id="rel-total-faltas">0</div><div class="stat-label">Total de faltas</div></div>
+    <div class="stat"><div class="stat-val verde" id="rel-total-ref">0</div><div class="stat-label">Refeições servidas</div></div>
+  </div>
+
+  <div class="card">
+    <p class="card-titulo mb0" id="rel-titulo-tabela">Resultado</p>
+    <div id="rel-filtros-sala" class="al-filtros-sala mt14"></div>
+    <div class="scroll-x mt14">
+      <table>
+        <thead id="rel-thead"></thead>
+        <tbody id="rel-corpo"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== QR ENTRADA ==================== -->
+<div id="tela-entrada" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>🏫 QR de Entrada</h1>
+      <p class="sub">QR Code único da escola — todos os alunos usam o mesmo para registrar presença na portaria</p>
+    </div>
+    <div class="topo-acoes">
+      <label for="ent-data" class="visually-hidden">Data</label>
+      <input type="date" id="ent-data" aria-label="Data">
+      <button class="btn btn-verde" onclick="gerarRelatorioPresenca()">📋 Relatório do dia</button>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div>
+      <!-- QR ÚNICO DA ESCOLA -->
+      <div class="qr-unico-box">
+        <div class="qr-unico-titulo">🏫 QR Code da Portaria</div>
+        <div class="qr-unico-sub">Fixe este QR na entrada da escola · Permanente para todos os alunos</div>
+        <div class="qr-unico-canvas">
+          <canvas id="qr-escola-canvas"></canvas>
+        </div>
+        <div class="justify-center">
+          <button class="btn btn-verde btn-sm" onclick="imprimirQREntrada()">🖨️ Imprimir</button>
+        </div>
+      </div>
+
+      <!-- REFEIÇÕES A AGENDAR -->
+      <div class="card">
+        <p class="card-titulo">Refeições a agendar automaticamente ao escanear</p>
+        <div class="checkbox-lista">
+          <label class="checkbox-label"><input type="checkbox" id="ent-ref-manha" checked> ☀️ Lanche manhã</label>
+          <label class="checkbox-label"><input type="checkbox" id="ent-ref-almoco" checked> 🍛 Almoço</label>
+          <label class="checkbox-label"><input type="checkbox" id="ent-ref-tarde" checked> 🌤️ Lanche tarde</label>
+        </div>
+      </div>
+
+      <!-- LEITOR DO QR DA CARTEIRINHA -->
+      <div class="card">
+        <p class="card-titulo">Ou leia o QR individual do aluno</p>
+        <div id="ent-qr-reader"></div>
+        <div class="cam-botoes">
+          <button class="btn btn-verde" id="ent-btn-iniciar" onclick="iniciarCameraEntrada()">Ligar câmera</button>
+          <button class="btn btn-out"   id="ent-btn-parar"   onclick="pararCameraEntrada()" disabled>Parar</button>
+        </div>
+        <p class="cam-dica">Lê o QR individual do aluno (carteirinha ou QR do sistema)</p>
+      </div>
+
+      <!-- QR Codes individuais foram movidos para a aba "Alunos" -->
+
+    </div>
+
+    <div>
+      <div class="resultado res-idle" id="ent-resultado">
+        <div class="res-icon">🏫</div>
+        <div class="res-nome">Aguardando</div>
+        <div class="res-sub">Use o QR da escola ou leia o QR individual</div>
+      </div>
+
+      <div class="card">
+        <p class="card-titulo">Sessão de entradas</p>
+        <div class="grid2">
+          <div class="sessao-item"><div class="sessao-val verde" id="ent-sess-ok">0</div><div class="sessao-label">Entradas</div></div>
+          <div class="sessao-item"><div class="sessao-val vermelho" id="ent-sess-err">0</div><div class="sessao-label">Inválidos</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-titulo">Últimas entradas</p>
+        <div id="ent-hist"><p class="vazio">Nenhuma entrada ainda.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ALUNOS ==================== -->
+<div id="tela-alunos" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>Alunos</h1>
+      <p class="sub">Cadastre e gerencie os alunos — cada aluno tem 1 QR Code para todas as refeições</p>
+    </div>
+    <button class="btn btn-verde" onclick="abrirModalAluno()">+ Novo aluno</button>
+  </div>
+
+  <div id="al-alerta" class="alerta"></div>
+
+  <div class="card">
+    <div class="card-topo">
+      <p class="card-titulo mb0">Alunos cadastrados</p>
+      <input type="text" id="al-busca" placeholder="Buscar..." class="busca" oninput="renderAlunos()">
+    </div>
+    <div id="al-filtros-sala" class="al-filtros-sala"></div>
+    <div class="scroll-x">
+      <table>
+        <thead><tr><th>Aluno</th><th>Turma</th><th>Turno</th><th>Restrições</th><th>QR Cantina · QR Entrada · Editar</th></tr></thead>
+        <tbody id="al-corpo"></tbody>
+      </table>
+    </div>
+    <div class="lista-qr-rodape" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:16px;">
+      <button class="btn btn-verde" onclick="imprimirTodosQRCantina()">🖨️ Imprimir todos QR de Cantina</button>
+      <button class="btn btn-roxo"  onclick="imprimirTodosQREntrada()">🖨️ Imprimir todos QR de Entrada</button>
+      <button class="btn" style="background:#0EA5E9;color:#fff;" onclick="exportarBackupJSON()">💾 Exportar Backup</button>
+      <button class="btn" style="background:#64748B;color:#fff;" onclick="importarBackupJSON()">📂 Importar Backup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== RELATÓRIO PRESENÇA ==================== -->
+<div id="tela-rel-presenca" class="tela">
+  <div class="topo-flex">
+    <div>
+      <h1>📋 Relatório de Presença</h1>
+      <p class="sub" id="rel-pres-subtitulo">Presentes e faltantes do dia</p>
+    </div>
+    <div class="topo-acoes">
+      <label for="rel-pres-data" class="visually-hidden">Data</label>
+      <input type="date" id="rel-pres-data" aria-label="Data do relatório de presença" onchange="renderRelatorioPresenca()">
+      <button class="btn btn-out" onclick="irPara('relatorios')">📊 Ver relatórios completos</button>
+    </div>
+  </div>
+
+  <div class="grid2 mb16">
+    <div class="pres-resumo-card verde-card">
+      <div class="pres-resumo-num" id="rel-pres-num-ok">0</div>
+      <div>
+        <div class="pres-resumo-txt">✅ Presentes</div>
+        <div class="pres-resumo-sub">Registraram entrada hoje</div>
+      </div>
+    </div>
+    <div class="pres-resumo-card verm-card">
+      <div class="pres-resumo-num" id="rel-pres-num-falta">0</div>
+      <div>
+        <div class="pres-resumo-txt">❌ Faltaram</div>
+        <div class="pres-resumo-sub">Sem registro de entrada</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="rel-pres-filtros-sala" class="al-filtros-sala mb16"></div>
+
+  <div class="grid2">
+    <div class="card">
+      <p class="card-titulo">✅ Alunos presentes</p>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Aluno</th><th>Turma</th><th>Entrada</th><th>Refeições</th></tr></thead>
+          <tbody id="rel-pres-corpo-ok"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <p class="card-titulo">❌ Alunos que faltaram</p>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Aluno</th><th>Turma</th><th>Turno</th></tr></thead>
+          <tbody id="rel-pres-corpo-falta"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Editar Aluno -->
+<div class="modal-bg" id="modal-editar-aluno">
+  <div class="modal">
+    <h2>Editar aluno</h2>
+    <input type="hidden" id="edit-al-id">
+    <div class="form-grupo">
+      <label for="edit-al-nome">Nome completo *</label>
+      <input id="edit-al-nome" placeholder="Nome do aluno">
+    </div>
+    <div class="form-grupo">
+      <label for="edit-al-ra">RA do aluno <span class="label-hint">(Registro do Aluno — usado na carteirinha)</span></label>
+      <input id="edit-al-ra" placeholder="Ex: 12345678">
+    </div>
+    <div class="grid2">
+      <div class="form-grupo">
+        <label for="edit-al-turma">Turma *</label>
+        <input id="edit-al-turma" placeholder="Ex: 5º A">
+      </div>
+      <div class="form-grupo">
+        <label for="edit-al-turno">Turno *</label>
+        <select id="edit-al-turno">
+          <option value="Manhã">Manhã</option>
+          <option value="Tarde">Tarde</option>
+          <option value="Integral">Integral</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grupo">
+      <label for="edit-al-rest">Restrições alimentares</label>
+      <input id="edit-al-rest" placeholder="Ex: Sem glúten, Vegetariano">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn btn-out" onclick="fecharModal('modal-editar-aluno')">Cancelar</button>
+      <button class="btn btn-verde" onclick="salvarEdicaoAluno()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Cadastrar Aluno -->
+<div class="modal-bg" id="modal-aluno">
+  <div class="modal">
+    <h2>Cadastrar aluno</h2>
+    <div class="form-grupo">
+      <label for="al-nome">Nome completo *</label>
+      <input id="al-nome" placeholder="Nome do aluno">
+    </div>
+    <div class="form-grupo">
+      <label for="al-ra">RA do aluno * <span class="label-hint">(Registro do Aluno — usado na carteirinha)</span></label>
+      <input id="al-ra" placeholder="Ex: 12345678">
+    </div>
+    <div class="grid2">
+      <div class="form-grupo">
+        <label for="al-turma">Turma *</label>
+        <input id="al-turma" placeholder="Ex: 5º A">
+      </div>
+      <div class="form-grupo">
+        <label for="al-turno">Turno *</label>
+        <select id="al-turno">
+          <option value="Manhã">Manhã</option>
+          <option value="Tarde">Tarde</option>
+          <option value="Integral">Integral</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grupo">
+      <label for="al-rest">Restrições alimentares</label>
+      <input id="al-rest" placeholder="Ex: Sem glúten, Vegetariano">
+    </div>
+    <div class="modal-acoes">
+      <button class="btn btn-out" onclick="fecharModal('modal-aluno')">Cancelar</button>
+      <button class="btn btn-verde" onclick="salvarAluno()">Cadastrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Novo Agendamento -->
+<div class="modal-bg" id="modal-agend">
+  <div class="modal">
+    <h2>Adicionar agendamento</h2>
+    <p class="modal-descricao">Apenas para controle de presença — o QR Code do aluno já existe e é permanente.</p>
+    <div class="form-grupo">
+      <label for="ag-sel-aluno">Aluno *</label>
+      <select id="ag-sel-aluno"><option value="">Selecione...</option></select>
+    </div>
+    <div class="grid2">
+      <div class="form-grupo">
+        <label for="ag-data">Data *</label>
+        <input type="date" id="ag-data">
+      </div>
+      <div class="form-grupo">
+        <label for="ag-ref">Refeição *</label>
+        <select id="ag-ref">
+          <option value="Lanche manhã">Lanche manhã</option>
+          <option value="Almoço" selected>Almoço</option>
+          <option value="Lanche tarde">Lanche tarde</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-acoes">
+      <button class="btn btn-out" onclick="fecharModal('modal-agend')">Cancelar</button>
+      <button class="btn btn-verde" onclick="salvarAgend()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Ver QR Code -->
+<div class="modal-bg" id="modal-qr">
+  <div class="modal modal-center">
+    <h2 id="qr-titulo">QR Code</h2>
+    <div class="qr-box"><canvas id="qr-canvas"></canvas></div>
+    <p id="qr-info" class="qr-info"></p>
+    <p id="qr-validade-txt" class="qr-validade">🟢 QR permanente · Todos os dias</p>
+    <div class="modal-acoes modal-acoes-center">
+      <button class="btn btn-out" onclick="fecharModal('modal-qr')">Fechar</button>
+      <button class="btn btn-verde" onclick="imprimirQR()">Imprimir</button>
+    </div>
+  </div>
+</div>
+
+</div><!-- fim #app -->
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(() => console.log('App pronto para uso offline!'))
+        .catch(err => console.log('SW erro:', err));
+    });
+  }
+</script>
+</body>
+</html>
